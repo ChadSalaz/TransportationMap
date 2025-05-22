@@ -1,0 +1,164 @@
+﻿@{
+    ViewBag.Title = "Interactive Map with Routing";
+}
+
+
+<style>
+    /* Ensure full-screen display, remove borders and margins */
+    html, body {
+        margin: 0;
+        padding: 0;
+    }
+
+    #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        border: none;
+    }
+</style>
+
+<div class="row">
+    <div class="col-md-12">
+        <h2>Interactive Map with Routing</h2>
+        <div id="map" style="height: 600px; width: 100%;"></div>
+        <div id="pinned-locations" style="margin-top: 20px;">
+            <h3>Latest Pinned Location</h3>
+            <ul id="pinned-list" class="list-group"></ul>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Initialize the map
+        var map = L.map('map').locate({ setView: true, maxZoom: 16 });
+        var markers = L.layerGroup().addTo(map);
+        var userLocation = null;
+        var latestPinnedLocation = null;
+        var routeControl = null;
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Get user's current location
+        map.on('locationfound', function (e) {
+            userLocation = e.latlng;
+            L.marker(userLocation, { draggable: false }).addTo(map) // Non-draggable user marker
+                .bindPopup("<b>Your Location</b>").openPopup();
+        });
+
+        // Add search control
+        L.Control.geocoder({
+            defaultMarkGeocode: false,
+            position: 'topleft',
+            placeholder: 'Search for locations...',
+            errorMessage: 'Location not found.'
+        })
+            .on('markgeocode', function (e) {
+                var location = e.geocode.center;
+                var locationName = e.geocode.name;
+
+                // Clear previous markers
+                markers.clearLayers();
+
+                // Create non-draggable marker for the searched location
+                var marker = L.marker(location, { draggable: false }).addTo(markers)
+                    .bindPopup(`<b>${locationName}</b><br>
+                            <button class="btn btn-xs btn-danger remove-marker">Remove Marker</button>`)
+                    .openPopup();
+
+                // Store as latest pinned location
+                latestPinnedLocation = {
+                    lat: location.lat,
+                    lng: location.lng,
+                    name: locationName,
+                    marker: marker
+                };
+
+                // Update the pinned locations list
+                updatePinnedList(latestPinnedLocation);
+
+                // Automatically create route
+                updateRoute();
+
+                // Handle remove marker button
+                marker.on('popupopen', function () {
+                    $('.remove-marker').click(function () {
+                        removeMarker();
+                    });
+                });
+            })
+            .addTo(map);
+
+        // Function to update the route
+        function updateRoute() {
+            if (userLocation && latestPinnedLocation) {
+                // Remove existing route control if it exists
+                if (routeControl) {
+                    map.removeControl(routeControl);
+                }
+
+                // Create new route
+                routeControl = L.Routing.control({
+                    waypoints: [
+                        userLocation,
+                        L.latLng(latestPinnedLocation.lat, latestPinnedLocation.lng)
+                    ],
+                    routeWhileDragging: false, // Disable route dragging
+                    showAlternatives: false,
+                    fitSelectedRoutes: true,
+                    show: true,
+                    collapsible: true
+                }).addTo(map);
+            }
+        }
+
+        // Function to update the pinned locations list
+        function updatePinnedList(location) {
+            $('#pinned-list').html(`
+                        <li class="list-group-item">
+                            ${location.name} (${location.lat.toFixed(4)}, ${location.lng.toFixed(4)})
+                            <button class="btn btn-xs btn-danger remove-from-list" style="float: right;">
+                                <i class="glyphicon glyphicon-remove"></i>
+                            </button>
+                        </li>
+                    `);
+
+            $('.remove-from-list').click(function () {
+                removeMarker();
+            });
+        }
+
+        // Function to remove the marker and clear the route
+        function removeMarker() {
+            if (latestPinnedLocation) {
+                markers.removeLayer(latestPinnedLocation.marker);
+                latestPinnedLocation = null;
+                $('#pinned-list').empty();
+
+                if (routeControl) {
+                    map.removeControl(routeControl);
+                    routeControl = null;
+                }
+            }
+        }
+    </script>
+
+    <style>
+        .remove-marker, .remove-from-list {
+            margin-top: 5px;
+        }
+
+        #pinned-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+}
